@@ -76,7 +76,7 @@ func Start(w http.ResponseWriter, r *http.Request) {
 		selfAddr = "http://localhost:" + strconv.Itoa(int(Port))
 
 		if Port == 6688 { //node1
-			//hardcode original BlockChain for node1
+			//hard code original BlockChain for node1
 
 			//jsonBlockChain, err := SBC.BlockChainToJson()
 			//if err != nil {
@@ -538,9 +538,9 @@ func StartTryingNonces() {
 		//check payee exist && payer has enough balance
 		if payeeBalance >= 0 && payerBalance >= tx.Amount {
 			selfId := strconv.Itoa(int(Port))
-
 			selfBalance := getBalance(parentBlock, payee)
 
+			//(3) Create an MPT.
 			mpt := parentBlock.Value
 			newPayerBalance := strconv.Itoa(int(payerBalance - tx.Amount))
 			newPayeeBalance := strconv.Itoa(int(payeeBalance + tx.Amount))
@@ -549,11 +549,6 @@ func StartTryingNonces() {
 			mpt.Insert(payee, newPayeeBalance)
 			mpt.Insert(selfId, newSelfBalance)
 
-			//(3) Create an MPT.
-			//mpt := p1.MerklePatriciaTrie{}
-			//mpt.Initial()
-			//mpt.Insert("a" + strconv.Itoa(rand.Intn(10)), "apple")
-			//mpt.Insert("b" + strconv.Itoa(rand.Intn(10)), "banana")
 			nonce = ""
 			//(4) Randomly generate the first nonce
 			for i := 0; i < 16; i++ {
@@ -654,6 +649,24 @@ func GetNonceHash(parentHash string, nonce string, mptRoot string) string {
 	return nonceHash
 }
 
+///**
+//send TX to node1, node1 will send TX to other peers
+// */
+func Transfer(w http.ResponseWriter, r *http.Request) {
+//	//get transaction
+//	body, err := ioutil.ReadAll(r.Body)
+//	if err != nil {
+//		log.Println("TransactionReceive: ReadAll", err)
+//		return
+//	}
+//	r.Body.Close()
+//	if err != nil {
+//		log.Println("TransactionReceive: Umarshal failed", err)
+//		w.WriteHeader(http.StatusBadRequest)
+//		return
+//	}
+}
+
 /**
 Route{
 		"TransactionReceive",
@@ -683,6 +696,7 @@ func TransactionReceive(w http.ResponseWriter, r *http.Request) {
 	//add TX to pool
 	Transactions.Add(tx)
 
+	//Hops check
 	//forward TX to peers
 	ForwardTransaction(tx)
 

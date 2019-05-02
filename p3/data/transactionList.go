@@ -1,6 +1,8 @@
 package data
 
 import (
+	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -68,6 +70,7 @@ func (txs *TransactionList) Delete(tx TransactionData) {
 func (txs *TransactionList) SortByTxFee() {
 	txs.mux.Lock()
 	defer txs.mux.Unlock()
-
+	sort.Slice(txs.TxList, func(i, j int) bool { return txs.TxList[i].TxFee < txs.TxList[j].TxFee })
+	fmt.Println("By TX fee:", txs.TxList)
 	//sort function
 }

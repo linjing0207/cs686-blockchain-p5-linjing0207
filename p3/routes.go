@@ -51,6 +51,12 @@ var routes = Routes{
 		Canonical,
 	},
 	Route{
+		"Transfer",
+		"POST",
+		"/transfer",
+		Transfer,
+	},
+	Route{
 		"TransactionReceive",
 		"POST",
 		"/transaction/receive",
@@ -68,10 +74,10 @@ var routes = Routes{
 		"/mytxs",
 		MyTXs,
 	},
-	Route{
-		"ServedTXs",
-		"GET",
-		"/servedtxs",
-		ServedTXs,
-	},
+	//Route{
+	//	"ServedTXs",
+	//	"GET",
+	//	"/servedtxs",
+	//	ServedTXs,
+	//},
 }
