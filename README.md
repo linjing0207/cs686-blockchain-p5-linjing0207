@@ -26,12 +26,13 @@ This project implements a cryptocurrency system based on the project4 structure.
 > Note: I have already accomplished functionalities from 1 to 7.
 
 ### 1.	Data structure modification:
-> **In Block.go**:
+> In Block.go:
 >> **Block**:	Block{Header{Height, Timestamp, Hash, ParentHash, Size, Transaction}, Value}<br>
 Each block must contain a header, and in the header, add a transaction field based on previous structure. <br>
 Each block must have a value, which is a Merkle Patricia Trie. All the data are inserted in the MPT and then a block contains that MPT as the value. MPT stores user’s ID and their account balance.<br>
 Value: mpt MerklePatriciaTrie<br>
-> **In transactionList.go**:
+
+> In transactionList.go:
 >> **TransactionList**:	TransctionList {TxList, mux}<br>
 (1)	TxList: [] TransctionData<br>
 (2)	mux(lock)<br>
