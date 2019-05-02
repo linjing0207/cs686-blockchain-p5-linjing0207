@@ -1,4 +1,4 @@
-# Progress report for Project5- Electronic Funds Transfer System
+# Progress Report For Project5 - Electronic Funds Transfer System
 
 ## Introduction:
 > [A cryptocurrency (or crypto currency) is a digital asset designed to work as a medium of exchange that uses strong cryptography to secure financial transactions, control the creation of additional units, and verify the transfer of assets.](https://en.wikipedia.org/wiki/Cryptocurrency)
@@ -10,17 +10,17 @@ This project implements a cryptocurrency system based on the project4 structure.
 
 ## Functionalities:
 
-> 1.	Each block stores all user’s newest balance and includes each TX happened in that time. [4/18]
-> 2.	API: show balance and transactions. [4/20]
-> 3.	User could transfer ether coins to other users. [4/22]
-> 4.	Miners add TX to mempool and forward TX to peers. [4/22]
-> 5.	Miner will priority serves the transactions with high TX fee, validate TX. [4/25]
-> 6.	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers. [4/28]
-> 7.	When receiving a new block, verify nonce and validate the TX. [5/1]
-> 8.	Money will be refunded when transaction fails (when block becomes a fork). [5/4]
-> 9.	Miners can earn TX fee, payee could get money when transaction be confirmed. (after 6 blocks) [5/8]
-> 10.	Each transaction will include payer’s signature. [5/12]
-> 11.	Final Testing [5/14]
+>1.	Each block stores all user’s newest balance and includes each TX happened in that time. [4/18]
+>2.	API: show balance and transactions. [4/20]
+>3.	User could transfer ether coins to other users. [4/22]
+>4.	Miners add TX to mempool and forward TX to peers. [4/22]
+>5.	Miner will priority serves the transactions with high TX fee, validate TX. [4/25]
+>6.	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers. [4/28]
+>7.	When receiving a new block, verify nonce and validate the TX. [5/1]
+>8.	Money will be refunded when transaction fails (when block becomes a fork). [5/4]
+>9.	Miners can earn TX fee, payee could get money when transaction be confirmed. (after 6 blocks) [5/8]
+>10.	Each transaction will include payer’s signature. [5/12]
+>11.	Final Testing [5/14]
 
 ## What you accomplished now and how:
 
