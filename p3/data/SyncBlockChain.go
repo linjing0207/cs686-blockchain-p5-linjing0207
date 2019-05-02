@@ -131,14 +131,17 @@ func(sbc *SyncBlockChain) BlockChainToJson() (string, error) {
 
 // GenBlock(): This function generates a new block after the current highest block.
 // You may consider it "create the next block".
-func(sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string) p2.Block {
+func(sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string, tx TransactionData) p2.Block {
 	sbc.mux.Lock()
 	defer sbc.mux.Unlock()
 	curBlockHeight := sbc.bc.Length
 	timeStamp := time.Now().Unix()
-	//parentHash is the hash of the block at previous height.
-	parentHash := sbc.bc.Chain[curBlockHeight][0].Header.Hash
-	block := p2.NewBlock(curBlockHeight + 1, timeStamp, parentHash, mpt, nonce)
+	parentHash := "genesis"
+	if curBlockHeight != 0 {
+		//parentHash is the hash of the block at previous height.
+		parentHash = sbc.bc.Chain[curBlockHeight][0].Header.Hash
+	}
+	block := p2.NewBlock(curBlockHeight + 1, timeStamp, parentHash, mpt, nonce, tx)
 	sbc.bc.Insert(block)
 	return block
 }

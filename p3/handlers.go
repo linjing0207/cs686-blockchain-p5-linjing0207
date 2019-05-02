@@ -9,15 +9,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"math/rand"
-	"strings"
-	"time"
+	"golang.org/x/crypto/sha3"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
-	"golang.org/x/crypto/sha3"
-
+	"strings"
+	"time"
 )
 
 var TA_SERVER = "http://localhost:6688"
@@ -28,6 +27,7 @@ var PREFIX = "000000"
 
 var SBC data.SyncBlockChain
 var Peers data.PeerList
+var Transactions data.TransactionList
 var ifStarted bool
 var selfAddr string
 var Port int32
@@ -40,7 +40,7 @@ Pairs struct stores addr and id
  */
 type Pairs struct {
 	Addr string `json:"addr"`
-	Id int32 `json:"id"`
+	Id   int32  `json:"id"`
 }
 
 /**
@@ -51,6 +51,7 @@ func init() {
 	// Do some initialization here.
 	SBC = data.NewBlockChain()
 	Peers = data.NewPeerList(Port, 32)
+	Transactions = data.NewTransactionList()
 	ifStarted = false
 }
 
@@ -75,19 +76,25 @@ func Start(w http.ResponseWriter, r *http.Request) {
 		selfAddr = "http://localhost:" + strconv.Itoa(int(Port))
 
 		if Port == 6688 { //node1
-			//create original BlockChain for node1
-			jsonBlockChain :=
-				"[{\"height\":1,\"timeStamp\":1551025401,\"hash\":\"6c9aad47a370269746f172a464fa6745fb3891194da65e3ad508ccc79e9a771b\",\"parentHash\":\"genesis\",\"size\":2089,\"mpt\":{\"CS686\":\"BlockChain\",\"test1\":\"value1\",\"test2\":\"value2\",\"test3\":\"value3\",\"test4\":\"value4\"}}," +
-					"{\"height\":2,\"timeStamp\":1551025402,\"hash\":\"944eb943b05caba08e89a613097ac5ac7d373d863224d17b1958541088dc20e2\",\"parentHash\":\"6c9aad47a370269746f172a464fa6745fb3891194da65e3ad508ccc79e9a771b\",\"size\":2146,\"mpt\":{\"CS686\":\"BlockChain\",\"test1\":\"value1\",\"test2\":\"value2\",\"test3\":\"value3\",\"test4\":\"value4\"}}," +
-					"{\"height\":2,\"timeStamp\":1551025403,\"hash\":\"f8af68feadf25a635bc6e81c08f81c6740bbe1fb2514c1b4c56fe1d957c7448d\",\"parentHash\":\"6c9aad47a370269746f172a464fa6745fb3891194da65e3ad508ccc79e9a771b\",\"size\":707,\"mpt\":{\"ge\":\"Charles\"}}," +
-					"{\"height\":3,\"timeStamp\":1551025405,\"hash\":\"f367b7f59c651e69be7e756298aad62fb82fddbfeda26cb06bfd8adf9c8aa094\",\"parentHash\":\"f8af68feadf25a635bc6e81c08f81c6740bbe1fb2514c1b4c56fe1d957c7448d\",\"size\":707,\"mpt\":{\"ge\":\"Charles\"}}," +
-					"{\"height\":3,\"timeStamp\":1551025406,\"hash\":\"05ac44dd82b6cc398a5e9664add21856ae19d107d9035af5fc54c9b0ffdef336\",\"parentHash\":\"944eb943b05caba08e89a613097ac5ac7d373d863224d17b1958541088dc20e2\",\"size\":2146,\"mpt\":{\"CS686\":\"BlockChain\",\"test1\":\"value1\",\"test2\":\"value2\",\"test3\":\"value3\",\"test4\":\"value4\"}}]"
-			SBC.UpdateEntireBlockChain(jsonBlockChain)
+			//hardcode original BlockChain for node1
+
+			//jsonBlockChain, err := SBC.BlockChainToJson()
+			//if err != nil {
+			//	log.Println("Start: BlockChainToJson", err)
+			//}
+
+			//SBC.UpdateEntireBlockChain(jsonBlockChain)
 		} else { //other nodes
 			//download the BlockChain from your own first node
 			Download()
 			Peers.Add(TA_SERVER, 6688)
 		}
+
+		mpt := p1.MerklePatriciaTrie{}
+		mpt.Initial()
+		mpt.Insert(strconv.Itoa(int(Port)), "100")
+		SBC.GenBlock(mpt, "", data.TransactionData{})
+
 		//start HeartBeat loop.
 		go StartHeartBeat()
 		//start StartTryingNonces loop
@@ -176,7 +183,6 @@ func Download() {
 	SBC.UpdateEntireBlockChain(blockChainJson)
 }
 
-
 /**
 Upload(): Return the BlockChain's JSON. And add the remote peer into the PeerMap.
 Upload blockchain to whoever called this method, return jsonStr
@@ -214,7 +220,7 @@ func Upload(w http.ResponseWriter, r *http.Request) {
 	//Every new node launched should let node1 know
 	Peers.Add(pairs.Addr, pairs.Id)
 
-	fmt.Fprint(w, blockChainJson + "\n")
+	fmt.Fprint(w, blockChainJson+"\n")
 }
 
 /**
@@ -276,7 +282,6 @@ func httpResponseError(w http.ResponseWriter, statusCode int) {
 	w.Write([]byte(responseContent))
 }
 
-
 /**
 Details for HeartBeatReceive
 1. When a node received a HeartBeat, the node will add the sender’s IP address,
@@ -332,7 +337,7 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 		//Then check if the HeartBeatData contains a new block.
 		if heartBeatData.IfNewBlock == true {
 			block, _ := p2.DecodeFromJson(heartBeatData.BlockJson)
-			//verifies nonce
+			//verify nonce
 			nonceHash := GetNonceHash(block.Header.ParentHash, block.Header.Nonce, block.Value.GetRoot())
 			if strings.HasPrefix(nonceHash, PREFIX) {
 				//check parentBlock
@@ -340,11 +345,21 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 				if !SBC.CheckParentHash(block) {
 					success := AskForBlock(block.Header.Height-1, block.Header.ParentHash)
 					if success {
-						SBC.Insert(block)
+						parentBlock,_ := SBC.GetParentBlock(block)
+						//check valid tx
+						if validateTX(block.Header.Transaction, parentBlock) {
+							SBC.Insert(block)
+						}
 					}
 					//else: failed -> forgive to insert whole chain
+
 				} else { //parentBlock exists in my bc
-					SBC.Insert(block)
+					parentBlock,_ := SBC.GetParentBlock(block)
+					//check valid tx
+					if validateTX(block.Header.Transaction, parentBlock) {
+						SBC.Insert(block)
+					}
+
 				}
 			}
 
@@ -376,9 +391,9 @@ What to do:
 Ask another server to return a block of certain height and hash
 in AskForBlock you will call http get to /localhost:port/block/{height}/{hash} (UploadBlock) to get the Block
  */
- //verify nonce
- //recursive stop base case height = 1
-func AskForBlock(height int32, hash string) bool{
+//verify nonce
+//recursive stop base case height = 1
+func AskForBlock(height int32, hash string) bool {
 	var block p2.Block
 	if height >= 1 {
 		//go to all peers, ask for block
@@ -399,20 +414,30 @@ func AskForBlock(height int32, hash string) bool{
 				if err != nil {
 					log.Println("AskForBlockError: DecodeFromJson", err)
 				}
+				//check nonce
+
 				//verify nonce
 				nonceHash := GetNonceHash(block.Header.ParentHash, block.Header.Nonce, block.Value.GetRoot())
 				if strings.HasPrefix(nonceHash, PREFIX) {
 					//already get the block, now you have to check whether or not you have its' parent
 					//parentBlock not exist in my bc, go to find parent's parent
 					if !SBC.CheckParentHash(block) {
-						success := AskForBlock(block.Header.Height - 1, block.Header.ParentHash)
+						success := AskForBlock(block.Header.Height-1, block.Header.ParentHash)
 						if success {
+							parentBlock,_ := SBC.GetParentBlock(block)
+							//check valid tx
+							if validateTX(block.Header.Transaction, parentBlock) {
+								SBC.Insert(block)
+								return true
+							}
+						}
+					} else { // parentBlock exist in my bc, insert curBlock
+						parentBlock,_ := SBC.GetParentBlock(block)
+						//check valid tx
+						if validateTX(block.Header.Transaction, parentBlock) {
 							SBC.Insert(block)
 							return true
 						}
-					} else { // parentBlock exist in my bc, insert curBlock
-						SBC.Insert(block)
-						return true
 					}
 				}
 			}
@@ -473,7 +498,7 @@ func StartHeartBeat() {
 		heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, "")
 
 		//5~10s forward heartbeat
-		myRand = rand.Intn(11 - 5) + 5
+		myRand = rand.Intn(11-5) + 5
 		ForwardHeartBeat(heartBeatData)
 
 		//sleep
@@ -490,8 +515,8 @@ StartTryingNonces(): This function starts a new thread that tries different nonc
     (6) If a nonce is found and the next block is generated, forward that block to all peers with an HeartBeatData;
     (7) If someone else found a nonce first, and you received the new block through your function ReceiveHeartBeat(), stop trying nonce on the current block, continue to the while loop by jumping to the step(2).
  */
- //solve puzzle
-func StartTryingNonces()  {
+//solve puzzle
+func StartTryingNonces() {
 	rand.Seed(time.Now().Unix())
 	var nonce string
 
@@ -500,69 +525,192 @@ func StartTryingNonces()  {
 		//(2) Get the latest block or one of the latest blocks to use as a parent block.
 		parentBlock := SBC.GetLatestBlocks()[0]
 
-		//(3) Create an MPT.
-		mpt := p1.MerklePatriciaTrie{}
-		mpt.Initial()
-		mpt.Insert("a" + strconv.Itoa(rand.Intn(10)), "apple")
-		mpt.Insert("b" + strconv.Itoa(rand.Intn(10)), "banana")
-		nonce = ""
-		//(4) Randomly generate the first nonce
-		for i := 0; i < 16 ; i++ {
-			rand := strconv.FormatInt(int64(rand.Intn(16)), 16)
-			nonce += rand
-		}
-		parentHash := parentBlock.Header.Hash
-		mptRoot := mpt.GetRoot()
+		//get TX(highest TX fee) from pool:
+		Transactions.SortByTxFee()
+		//get last one = with highest TX fee
+		tx := Transactions.TxList[len(Transactions.TxList)]
 
-		for {
-			//(7) If someone else found a nonce first,
-			// and you received the new block through your function ReceiveHeartBeat(),
-			// stop trying nonce on the current block,
-			// continue to the while loop by jumping to the step(2).
-			if parentBlock.Header.Height < SBC.GetLatestBlocks()[0].Header.Height {
-				break
-			} else {
-				nonceHash := GetNonceHash(parentHash, nonce, mptRoot)
-				if strings.HasPrefix(nonceHash, PREFIX) {
-					//(6) If a nonce is found and the next block is generated,
-					// forward that block to all peers with an HeartBeatData;
-					block := SBC.GenBlock(mpt, nonce)
-					blockJson, err := block.EncodeToJson()
-					if err != nil {
-						log.Println("StartTryingNonces: EncodeToJson", err)
-					}
-					peerMapJSON, err := Peers.PeerMapToJson()
-					if err != nil {
-						log.Println("StartTryingNonces: PeerMapToJson", err)
-					}
-					heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, blockJson)
-					fmt.Println("Generate block:")
-					ForwardHeartBeat(heartBeatData)
+		payer := strconv.Itoa(int(tx.PayerId))
+		payee := strconv.Itoa(int(tx.PayeeId))
+		payerBalance := getBalance(parentBlock, payer)
+		payeeBalance := getBalance(parentBlock, payee)
+
+		//check payee exist && payer has enough balance
+		if payeeBalance >= 0 && payerBalance >= tx.Amount {
+			selfId := strconv.Itoa(int(Port))
+
+			selfBalance := getBalance(parentBlock, payee)
+
+			mpt := parentBlock.Value
+			newPayerBalance := strconv.Itoa(int(payerBalance - tx.Amount))
+			newPayeeBalance := strconv.Itoa(int(payeeBalance + tx.Amount))
+			newSelfBalance := strconv.Itoa(int(selfBalance + tx.TxFee))
+			mpt.Insert(payer, newPayerBalance)
+			mpt.Insert(payee, newPayeeBalance)
+			mpt.Insert(selfId, newSelfBalance)
+
+			//(3) Create an MPT.
+			//mpt := p1.MerklePatriciaTrie{}
+			//mpt.Initial()
+			//mpt.Insert("a" + strconv.Itoa(rand.Intn(10)), "apple")
+			//mpt.Insert("b" + strconv.Itoa(rand.Intn(10)), "banana")
+			nonce = ""
+			//(4) Randomly generate the first nonce
+			for i := 0; i < 16; i++ {
+				rand := strconv.FormatInt(int64(rand.Intn(16)), 16)
+				nonce += rand
+			}
+			parentHash := parentBlock.Header.Hash
+			mptRoot := mpt.GetRoot()
+
+			for {
+				//(7) If someone else found a nonce first,
+				// and you received the new block through your function ReceiveHeartBeat(),
+				// stop trying nonce on the current block,
+				// continue to the while loop by jumping to the step(2).
+				if parentBlock.Header.Height < SBC.GetLatestBlocks()[0].Header.Height {
 					break
-
 				} else {
-					data, err := strconv.ParseUint(nonce, 16, 64)
-					if err != nil {
-						fmt.Println(err)
-					}
-					nonce = strconv.FormatInt(int64(data + 1), 16)
-					if len(nonce) > 16 {
-						nonce = "0000000000000000"
+					nonceHash := GetNonceHash(parentHash, nonce, mptRoot)
+					if strings.HasPrefix(nonceHash, PREFIX) {
+						//(6) If a nonce is found and the next block is generated,
+						// forward that block to all peers with an HeartBeatData;
+						block := SBC.GenBlock(mpt, nonce, tx)
+						blockJson, err := block.EncodeToJson()
+						if err != nil {
+							log.Println("StartTryingNonces: EncodeToJson", err)
+						}
+						peerMapJSON, err := Peers.PeerMapToJson()
+						if err != nil {
+							log.Println("StartTryingNonces: PeerMapToJson", err)
+						}
+						heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, blockJson)
+						fmt.Println("Generate block:")
+
+						//forward heartbeat
+						ForwardHeartBeat(heartBeatData)
+						//remove tx from pool
+						Transactions.Delete(tx)
+						break
+					} else {
+						data, err := strconv.ParseUint(nonce, 16, 64)
+						if err != nil {
+							fmt.Println(err)
+						}
+						nonce = strconv.FormatInt(int64(data+1), 16)
+						if len(nonce) > 16 {
+							nonce = "0000000000000000"
+						}
 					}
 				}
 			}
+		} else {
+			Transactions.Delete(tx)
 		}
 	}
 }
 
+func stringToInt32(str string) int32 {
+	v, err := strconv.Atoi(str)
+	if err != nil {
+		log.Println("stringToInt32: convertStringToInt32", err)
+	}
+	return int32(v)
+}
+
+func getBalance(block p2.Block, key string) int32 {
+	value, err := block.Value.Get(key)
+	if err != nil {
+		log.Println("getBalance: Get", err)
+		return -1
+	}
+	var v int
+	v, err = strconv.Atoi(value)
+	if err != nil {
+		log.Println("getBalance: Atoi", err)
+	}
+	return int32(v)
+}
+
+func validateTX(tx data.TransactionData, parentBlock p2.Block) bool{
+	payer := strconv.Itoa(int(tx.PayerId))
+	payee := strconv.Itoa(int(tx.PayeeId))
+	payerBalance := getBalance(parentBlock, payer)
+	payeeBalance := getBalance(parentBlock, payee)
+	//valid
+	if payeeBalance >= 0 && payerBalance >= tx.Amount {
+		return true
+	} else {
+		return false
+	}
+}
 /**
 GetNonceHash: use SHA3(parentHash + nonce + mptRootHash) to get nonce hash
  */
-func GetNonceHash(parentHash string, nonce string, mptRoot string) string{
+func GetNonceHash(parentHash string, nonce string, mptRoot string) string {
 	hashStr := parentHash + nonce + mptRoot
 	sum := sha3.Sum256([]byte(hashStr))
 	nonceHash := hex.EncodeToString(sum[:])
 	return nonceHash
+}
+
+/**
+Route{
+		"TransactionReceive",
+		"POST",
+		"transaction/receive",
+		TransactionReceive,
+	},
+ */
+func TransactionReceive(w http.ResponseWriter, r *http.Request) {
+	//get transaction
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("TransactionReceive: ReadAll", err)
+		return
+	}
+	r.Body.Close()
+
+	//heartBeatJson := string(body)
+	tx := data.TransactionData{}
+	err = json.Unmarshal([]byte(body), &tx)
+	if err != nil {
+		log.Println("TransactionReceive: Umarshal failed", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	//add TX to pool
+	Transactions.Add(tx)
+
+	//forward TX to peers
+	ForwardTransaction(tx)
+
+}
+
+/**
+
+ */
+func ForwardTransaction(tx data.TransactionData) {
+	Peers.Rebalance()
+	//send tx to peers
+	peerMap := Peers.Copy()
+	var resp *http.Response
+	for addr := range peerMap {
+		url := addr + "/transaction/receive"
+		txJson, err := json.Marshal(tx)
+		if err != nil {
+			log.Println("ForwardTransaction: json.Marshal", err)
+		}
+		resp, err = http.Post(url, "application/json; charset=UTF-8", bytes.NewBuffer(txJson))
+		if err != nil {
+			log.Println("ForwardTransaction: Post request", err)
+		}
+		if resp == nil {
+			return
+		}
+		resp.Body.Close()
+	}
 }
 
 /**
@@ -580,7 +728,7 @@ func Canonical(w http.ResponseWriter, r *http.Request) {
 	blockList := SBC.GetLatestBlocks()
 	//fmt.Println(blockList)
 	for i, block := range blockList {
-		str += "\n" + "CHAIN #" + strconv.Itoa(i + 1) + "\n"
+		str += "\n" + "CHAIN #" + strconv.Itoa(i+1) + "\n"
 		str += getBlockFormat(block) + "\n"
 		parentBlock, parentBlockExist := SBC.GetParentBlock(block)
 		for parentBlockExist { //find next parentBlock
@@ -591,9 +739,59 @@ func Canonical(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, str)
 }
 
+func MyBalance(w http.ResponseWriter, r *http.Request) {
+	//???Assume 0th is the canonical
+	block := SBC.GetLatestBlocks()[0]
+	mpt := block.Value
+	balance, err := mpt.Get(strconv.Itoa(int(Port)))
+	if err != nil {
+		log.Println("MyBalance: mpt.Get", err)
+	}
+	str := "SelfId:" + strconv.Itoa(int(Port)) + ", Balance:" + balance
+	fmt.Fprintf(w, str)
+}
+
+func MyTXs(w http.ResponseWriter, r *http.Request) {
+	str := ""
+	blockList := SBC.GetLatestBlocks()
+	for i, block := range blockList {
+		str += "\n" + "CHAIN #" + strconv.Itoa(i+1) + "\n"
+		parentBlock, parentBlockExist := SBC.GetParentBlock(block)
+		if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
+			str += "" + "\n"
+		}
+		for parentBlockExist { //find next parentBlock
+			if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
+				str += "" + "\n"
+			}
+			parentBlock, parentBlockExist = SBC.GetParentBlock(parentBlock)
+		}
+	}
+	fmt.Fprintf(w, str)
+}
+
+//func ServedTXs(w http.ResponseWriter, r *http.Request) {
+//	str := ""
+//	blockList := SBC.GetLatestBlocks()
+//	for i, block := range blockList {
+//		str += "\n" + "CHAIN #" + strconv.Itoa(i+1) + "\n"
+//		parentBlock, parentBlockExist := SBC.GetParentBlock(block)
+//		if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
+//			str += "" + "\n"
+//		}
+//		for parentBlockExist { //find next parentBlock
+//			if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
+//				str += "" + "\n"
+//			}
+//			parentBlock, parentBlockExist = SBC.GetParentBlock(parentBlock)
+//		}
+//	}
+//	fmt.Fprintf(w, str)
+//}
+
 /**
 getBlockFormat: create block format
  */
 func getBlockFormat(block p2.Block) string {
-	return "height=" +  strconv.Itoa(int(block.Header.Height)) + ", timestamp=" + strconv.Itoa(int(block.Header.Timestamp)) + ", hash=" + block.Header.Hash + ", parentHash=" + block.Header.ParentHash + ", size=" + strconv.Itoa(int(block.Header.Size))
+	return "height=" + strconv.Itoa(int(block.Header.Height)) + ", timestamp=" + strconv.Itoa(int(block.Header.Timestamp)) + ", hash=" + block.Header.Hash + ", parentHash=" + block.Header.ParentHash + ", size=" + strconv.Itoa(int(block.Header.Size))
 }

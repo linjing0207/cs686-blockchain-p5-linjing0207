@@ -54,6 +54,7 @@ Return: the root of mpt (string).
 func (mpt *MerklePatriciaTrie) GetRoot() string{
 	return mpt.root
 }
+
 /**
 Description:
 The Get function takes a key as argument,
@@ -130,6 +131,7 @@ func (mpt *MerklePatriciaTrie) Delete(key string) (string, error) {
 	}
 	return value, err
 }
+
 
 /**
 Description:

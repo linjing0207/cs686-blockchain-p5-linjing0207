@@ -43,12 +43,35 @@ var routes = Routes{
 		"/start",
 		Start,
 	},
-
 	// Add a route: Name is "Canonical", Method is GET, Pattern is "/canonical", HandlerFunc is "Canonical".
 	Route{
 		"Canonical",
 		"GET",
 		"/canonical",
 		Canonical,
+	},
+	Route{
+		"TransactionReceive",
+		"POST",
+		"/transaction/receive",
+		TransactionReceive,
+	},
+	Route{
+		"MyBalance",
+		"GET",
+		"/mybalance",
+		MyBalance,
+	},
+	Route{
+		"MyTXs",
+		"GET",
+		"/mytxs",
+		MyTXs,
+	},
+	Route{
+		"ServedTXs",
+		"GET",
+		"/servedtxs",
+		ServedTXs,
 	},
 }
