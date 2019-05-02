@@ -1,15 +1,14 @@
-Progress report for Project5- Electronic Funds Transfer System
+# Progress report for Project5- Electronic Funds Transfer System #
 
-Introduction:
-
-A cryptocurrency (or crypto currency) is a digital asset designed to work as a medium of exchange that uses strong cryptography to secure financial transactions, control the creation of additional units, and verify the transfer of assets.
+## Introduction:
+[A cryptocurrency (or crypto currency) is a digital asset designed to work as a medium of exchange that uses strong cryptography to secure financial transactions, control the creation of additional units, and verify the transfer of assets.](https://en.wikipedia.org/wiki/Cryptocurrency)
 This project implements a cryptocurrency system based on the project4 structure. In this project design, we assume that all the users could be miners. That means all the nodes could transfer money to others and also could generate blocks.
 
-Background:
+## Background:
 
 Blockchain technology could avoid building complex systems, and create a more direct payment process between the payer and the payee. Whether it is domestic transfer or cross-border transfer, this payment has the advantages of low price, fast, and no intermediate fee.
 
-Functionalities:
+## Functionalities:
 
 1.	Each block stores all user’s newest balance and includes each TX happened in that time. [4/18]
 2.	API: show balance and transactions. [4/20]
@@ -23,17 +22,17 @@ Functionalities:
 10.	Each transaction will include payer’s signature. [5/12]
 11.	Final Testing [5/14]
 
-What you accomplished now and how:
+## What you accomplished now and how:
 
 Note: I have already accomplished functionalities from 1 to 6.
-1.	Data structure modification:
-In Block.go:
+#### 1.	Data structure modification:
+##### In Block.go:
 Block:	Block{Header{Height, Timestamp, Hash, ParentHash, Size, Transaction}, Value}
 Each block must contain a header, and in the header, add a transaction field based on previous structure. 
 Transaction: transactionData
 Each block must have a value, which is a Merkle Patricia Trie. All the data are inserted in the MPT and then a block contains that MPT as the value. MPT stores user’s ID and their account balance.
 Value: mpt MerklePatriciaTrie
-In transactionList.go:
+##### In transactionList.go:
 TransactionList:	TransctionList { TxList, mux}
 (1)	TxList: [] TransctionData
 (2)	mux(lock)
@@ -45,7 +44,7 @@ Transaction stores TX details.
 (4)	TxFee: int32
 (5)	Total: int32
 
-2.	API
+#### 2.	API
 
 /transaction/receive 
 Method: POST
@@ -65,8 +64,7 @@ Response: The JSON string of all the transactions.
 Description: Show all the transactions of current user.
 Logic: Go through the canonical chain, if payer or payee is current user, return back the list of TXs.
 
-
-3.	Functionalities implementation
+#### 3.	Functionalities implementation
 
 (1)	User could transfer ether coins to other users.
 By using API “/transaction/receive”, user could send a transaction with TX fee to miners.
@@ -83,9 +81,9 @@ Miner will generate the block for the valid transaction, and transfer money from
 (5)	When receiving a new block, verify nonce and validate the TX.
 When receiving a heartbeat with new block, user have to find all missing predecessor block from peers. Verify the nonce and validate the TX for each block before insert.
 
-Reference:
+## Reference:
 
-1.https://en.wikipedia.org/wiki/Cryptocurrency
-2.https://www.bitcoinmining.com/bitcoin-mining-fees/
-3.https://hbr.org/2017/01/the-truth-about-blockchain
+>> 1.https://en.wikipedia.org/wiki/Cryptocurrency
+>> 2.https://www.bitcoinmining.com/bitcoin-mining-fees/
+>> 3.https://hbr.org/2017/01/the-truth-about-blockchain
 
