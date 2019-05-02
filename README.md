@@ -11,19 +11,20 @@ This project implements a cryptocurrency system based on the project4 structure.
 ## Functionalities:
 
 >1.	Each block stores all user’s newest balance and includes each TX happened in that time. [4/18]
->2.	API: show balance and transactions. [4/20]
->3.	User could transfer ether coins to other users, send TX to miners. [4/22]
->4.	Miners add TX to mempool and forward TX to peers. [4/22]
->5.	Miner will priority serves the transactions with high TX fee, validate TX. [4/25]
->6.	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers. [4/28]
->7.	When receiving a new block, verify nonce and validate the TX. [5/1]
->8.	Money will be refunded when transaction fails (when block becomes a fork). [5/4]
->9.	Miners can earn TX fee, payee could get money when transaction be confirmed. (after 6 blocks) [5/8]
->10.	Each transaction will include payer’s signature. [5/12]
->11.	Final Testing [5/14]
+>2. Each user will have 100 ETH deposit when he register. [4/18]
+>3.	API: show balance and transactions. [4/20]
+>4.	User could transfer ether coins to other users, send TX to miners. [4/22]
+>5.	Miners add TX to mempool and forward TX to peers. [4/22]
+>6.	Miner will priority serves the transactions with high TX fee, validate TX. [4/25]
+>7.	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers. [4/28]
+>8.	When receiving a new block, verify nonce and validate the TX. [5/1]
+>9.	Money will be refunded when transaction fails (when block becomes a fork). [5/4]
+>10.	Miners can earn TX fee, payee could get money when transaction be confirmed. (after 6 blocks) [5/8]
+>11. Each transaction will include payer’s signature. [5/12]
+>12. Final Testing [5/14]
 
 ## What you accomplished now and how:
-> Note: I have already accomplished functionalities from 1 to 7.
+> Note: I have already accomplished functionalities from 1 to 8.
 
 ### 1.	Data structure modification:
 > In Block.go:
@@ -66,16 +67,20 @@ Logic: Go through the canonical chain, if payer or payee is current user, return
 
 ### 3.	Functionalities implementation
 
-> (1)	User could transfer ether coins to other users, send TX to miners.<br>
+> (1)	Data storage and initial deposit.<br>
+See data structure details.
+We assume that each user will have 100 ETH deposit when registering. Thus, each node will create a new mpt with its account(previous mpt plus its account), then generate a new block without TX by itslef.
+
+> (2)	User could transfer ether coins to other users, send TX to miners.<br>
 By using API “/transaction/receive”, user could send a transaction with TX fee to miners.
 
-> (2)	Miners add TX to mempool and forward TX to peers.<br>
+> (3)	Miners add TX to mempool and forward TX to peers.<br>
 When Miner received TX, he will add this transaction to his own menpool (unconfirmed transaction list) and forward TX to peers. Forwarding TX also use API “/transaction/receive” to send TX to other miners.
 
-> (3)	Miner will priority serves the transactions with high TX fee, validate TX.<br>
+> (4)	Miner will priority serves the transactions with high TX fee, validate TX.<br>
 Miner will try nonce constantly. Miner will sort all TXs by TX fee in the mempool and get the TX with highest TX fee due to miners want to maximize their income. After that, miner have to validate the TX details. Check if there is enough balance for payer and check if the payee exists based on the latest block. 
 
-> (4)	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers.<br>
+> (5)	When miner generate a new block, miner will process transaction and get TX fee, then forward heartbeat to peers.<br>
 Once miner finds the nonce, miner will generate the block for the valid transaction, and transfer money from payer to payee. At the same time, miner get the transaction fee. Finally, miner send heartbeat with the new block to his peers.
 
 > (5)	When receiving a new block, verify nonce and validate the TX.<br>
