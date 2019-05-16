@@ -74,10 +74,10 @@ var routes = Routes{
 		"/mytxs",
 		MyTXs,
 	},
-	//Route{
-	//	"ServedTXs",
-	//	"GET",
-	//	"/servedtxs",
-	//	ServedTXs,
-	//},
+	Route{
+		"AllTXs",
+		"GET",
+		"/txs",
+		AllTXs,
+	},
 }

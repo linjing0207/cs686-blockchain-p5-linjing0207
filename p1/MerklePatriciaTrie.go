@@ -75,6 +75,7 @@ func (mpt *MerklePatriciaTrie) Get(key string) (string, error) {
 	} else {
 		//convert string to hex array [1,6,1]
 		hex_array := stringToHex_array(key)
+		//fmt.Println("hex:", hex_array)
 		if key == "" {
 			value = ""
 			err = errors.New("path_not_found")
@@ -252,6 +253,7 @@ func (mpt *MerklePatriciaTrie) get_helper(hex_array []uint8, hash string) (strin
 				if hex_array[i] != decode_array[i] {
 					value = ""
 					err = errors.New("path_not_found")
+					return value, err
 				}
 			}
 			hex_array = hex_array[len(decode_array):]

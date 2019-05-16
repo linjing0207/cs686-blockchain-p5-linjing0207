@@ -3,6 +3,7 @@ package data
 import (
 	"../../p1"
 	"../../p2"
+	"../../p5"
 	"sync"
 	"time"
 )
@@ -20,6 +21,12 @@ func NewBlockChain() SyncBlockChain {
 	return SyncBlockChain{bc: p2.NewBlockChain()}
 }
 
+func(sbc *SyncBlockChain) GetLength() int32 {
+	sbc.mux.Lock()
+	defer sbc.mux.Unlock()
+
+	return sbc.bc.Length
+}
 /**
 Get blockList of a certain height from blockchain
  */
@@ -131,7 +138,7 @@ func(sbc *SyncBlockChain) BlockChainToJson() (string, error) {
 
 // GenBlock(): This function generates a new block after the current highest block.
 // You may consider it "create the next block".
-func(sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string, tx TransactionData) p2.Block {
+func(sbc *SyncBlockChain) GenBlock(mpt p1.MerklePatriciaTrie, nonce string, tx p5.TransactionData) p2.Block {
 	sbc.mux.Lock()
 	defer sbc.mux.Unlock()
 	curBlockHeight := sbc.bc.Length
@@ -162,6 +169,7 @@ GetLatestBlocks(): This function returns the list of blocks of height "BlockChai
 func (sbc *SyncBlockChain) GetLatestBlocks() []p2.Block {
 	sbc.mux.Lock()
 	defer sbc.mux.Unlock()
+
 	return sbc.bc.GetLatestBlocks()
 }
 

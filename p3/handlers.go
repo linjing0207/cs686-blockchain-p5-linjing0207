@@ -3,6 +3,8 @@ package p3
 import (
 	"../p1"
 	"../p2"
+	"../p5"
+	"../p5/signature"
 	"./data"
 	"bytes"
 	"encoding/hex"
@@ -24,16 +26,16 @@ var REGISTER_SERVER = TA_SERVER + "/peer"
 var BC_DOWNLOAD_SERVER = TA_SERVER + "/upload"
 var SELF_ADDR = "http://localhost:6686"
 var PREFIX = "000000"
+var DEPOSIT = int32(100)
 
 var SBC data.SyncBlockChain
 var Peers data.PeerList
-var Transactions data.TransactionList
+var Transactions p5.TransactionList
 var ifStarted bool
 var selfAddr string
 var Port int32
-
-var running bool
-var othersFound bool
+var privateKey []byte
+var publicKey []byte
 
 /**
 Pairs struct stores addr and id
@@ -51,7 +53,7 @@ func init() {
 	// Do some initialization here.
 	SBC = data.NewBlockChain()
 	Peers = data.NewPeerList(Port, 32)
-	Transactions = data.NewTransactionList()
+	//Transactions = data.NewTransactionList()
 	ifStarted = false
 }
 
@@ -74,26 +76,42 @@ func Start(w http.ResponseWriter, r *http.Request) {
 		//Register()
 		Peers.Register(Port)
 		selfAddr = "http://localhost:" + strconv.Itoa(int(Port))
-
+		var mpt p1.MerklePatriciaTrie
 		if Port == 6688 { //node1
 			//hard code original BlockChain for node1
-
-			//jsonBlockChain, err := SBC.BlockChainToJson()
-			//if err != nil {
-			//	log.Println("Start: BlockChainToJson", err)
-			//}
-
-			//SBC.UpdateEntireBlockChain(jsonBlockChain)
+			mpt = p1.MerklePatriciaTrie{}
+			mpt.Initial()
 		} else { //other nodes
 			//download the BlockChain from your own first node
 			Download()
 			Peers.Add(TA_SERVER, 6688)
+			mpt = SBC.GetLatestBlocks()[0].Value
 		}
+		//generate privateKey and publicKey
+		signature.GenRsaKey(1024)
+		privateKey = signature.GetPrivateKey()
+		publicKey = signature.GetPublicKey()
 
-		mpt := p1.MerklePatriciaTrie{}
-		mpt.Initial()
-		mpt.Insert(strconv.Itoa(int(Port)), "100")
-		SBC.GenBlock(mpt, "", data.TransactionData{})
+		//create userInfo(balance + publicKey)
+		userInfo := make(map[string]string)
+		userInfo["balance"] = strconv.Itoa(int(DEPOSIT))
+		userInfo["publicKey"] = string(publicKey)
+		buffer, err := json.Marshal(userInfo)
+		if err != nil {
+			log.Println(err)
+		}
+		mpt.Insert(strconv.Itoa(int(Port)), string(buffer[:]))
+		block := SBC.GenBlock(mpt, "", p5.TransactionData{})
+
+		var peerMapJSON string
+		peerMapJSON, err = Peers.PeerMapToJson()
+		if err != nil {
+			log.Println(err)
+		}
+		var blockJson string
+		blockJson, err = block.EncodeToJson()
+		heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, blockJson)
+		ForwardHeartBeat(heartBeatData)
 
 		//start HeartBeat loop.
 		go StartHeartBeat()
@@ -339,30 +357,30 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 			block, _ := p2.DecodeFromJson(heartBeatData.BlockJson)
 			//verify nonce
 			nonceHash := GetNonceHash(block.Header.ParentHash, block.Header.Nonce, block.Value.GetRoot())
-			if strings.HasPrefix(nonceHash, PREFIX) {
+			if block.Header.Nonce == "" || strings.HasPrefix(nonceHash, PREFIX) {
 				//check parentBlock
 				//If parentBlock not exist in my bc, you should ask others to download that parent block of height 6 before inserting the block of height 7.
 				if !SBC.CheckParentHash(block) {
 					success := AskForBlock(block.Header.Height-1, block.Header.ParentHash)
 					if success {
-						parentBlock,_ := SBC.GetParentBlock(block)
+						parentBlock, _ := SBC.GetParentBlock(block)
 						//check valid tx
-						if validateTX(block.Header.Transaction, parentBlock) {
+						if block.Header.Transaction == (p5.TransactionData{}) ||
+							validateTX(block.Header.Transaction, parentBlock) {
 							SBC.Insert(block)
+							Transactions.Delete(block.Header.Transaction)
 						}
 					}
 					//else: failed -> forgive to insert whole chain
-
 				} else { //parentBlock exists in my bc
-					parentBlock,_ := SBC.GetParentBlock(block)
+					parentBlock, _ := SBC.GetParentBlock(block)
 					//check valid tx
-					if validateTX(block.Header.Transaction, parentBlock) {
+					if block.Header.Transaction == (p5.TransactionData{}) || validateTX(block.Header.Transaction, parentBlock) {
 						SBC.Insert(block)
+						Transactions.Delete(block.Header.Transaction)
 					}
-
 				}
 			}
-
 		}
 		//hops-1
 		heartBeatData.Hops -= 1 //initial hops = 3
@@ -372,16 +390,6 @@ func HeartBeatReceive(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "HeartBeat recived.\n")
 }
-
-//recursive method using block as parameter
-//func askForBlock(b p2.Block){
-//	if verify b
-//	SBC.get(par, h)
-//	for peerlist:
-//		request()
-//		ask(b)
-//		break
-//}
 
 /**
 AskForBlock(): Loop through all peers in local PeerMap to download a block.
@@ -414,28 +422,29 @@ func AskForBlock(height int32, hash string) bool {
 				if err != nil {
 					log.Println("AskForBlockError: DecodeFromJson", err)
 				}
-				//check nonce
 
 				//verify nonce
 				nonceHash := GetNonceHash(block.Header.ParentHash, block.Header.Nonce, block.Value.GetRoot())
-				if strings.HasPrefix(nonceHash, PREFIX) {
+				if block.Header.Nonce == "" || strings.HasPrefix(nonceHash, PREFIX) {
 					//already get the block, now you have to check whether or not you have its' parent
 					//parentBlock not exist in my bc, go to find parent's parent
 					if !SBC.CheckParentHash(block) {
 						success := AskForBlock(block.Header.Height-1, block.Header.ParentHash)
 						if success {
-							parentBlock,_ := SBC.GetParentBlock(block)
+							parentBlock, _ := SBC.GetParentBlock(block)
 							//check valid tx
-							if validateTX(block.Header.Transaction, parentBlock) {
+							if block.Header.Transaction == (p5.TransactionData{}) || validateTX(block.Header.Transaction, parentBlock) {
 								SBC.Insert(block)
+								Transactions.Delete(block.Header.Transaction)
 								return true
 							}
 						}
 					} else { // parentBlock exist in my bc, insert curBlock
-						parentBlock,_ := SBC.GetParentBlock(block)
+						parentBlock, _ := SBC.GetParentBlock(block)
 						//check valid tx
-						if validateTX(block.Header.Transaction, parentBlock) {
+						if block.Header.Transaction == (p5.TransactionData{}) || validateTX(block.Header.Transaction, parentBlock) {
 							SBC.Insert(block)
+							Transactions.Delete(block.Header.Transaction)
 							return true
 						}
 					}
@@ -498,7 +507,11 @@ func StartHeartBeat() {
 		heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, "")
 
 		//5~10s forward heartbeat
-		myRand = rand.Intn(11-5) + 5
+		//myRand = rand.Intn(11-5) + 5
+
+		//5~10s forward heartbeat
+		myRand = rand.Intn(15-5) + 5
+
 		ForwardHeartBeat(heartBeatData)
 
 		//sleep
@@ -519,91 +532,140 @@ StartTryingNonces(): This function starts a new thread that tries different nonc
 func StartTryingNonces() {
 	rand.Seed(time.Now().Unix())
 	var nonce string
-
 	//(1) Start a while loop.
 	for {
-		//(2) Get the latest block or one of the latest blocks to use as a parent block.
-		parentBlock := SBC.GetLatestBlocks()[0]
+		//fmt.Println("hello???:", Transactions.TxList)
+		if len(Transactions.TxList) >= 1 {
 
-		//get TX(highest TX fee) from pool:
-		Transactions.SortByTxFee()
-		//get last one = with highest TX fee
-		tx := Transactions.TxList[len(Transactions.TxList)]
+			//(2) Get the latest block or one of the latest blocks to use as a parent block.
+			parentBlock := SBC.GetLatestBlocks()[0]
+			mpt := p1.MerklePatriciaTrie{}
+			mpt = parentBlock.Value
+			//get TX(highest TX fee) from pool:
+			Transactions.SortByTxFee()
+			//get last one = with highest TX fee
+			tx := Transactions.TxList[len(Transactions.TxList)-1]
 
-		payer := strconv.Itoa(int(tx.PayerId))
-		payee := strconv.Itoa(int(tx.PayeeId))
-		payerBalance := getBalance(parentBlock, payer)
-		payeeBalance := getBalance(parentBlock, payee)
+			//this tx is data without hops
+			txData := tx.TransactionData
 
-		//check payee exist && payer has enough balance
-		if payeeBalance >= 0 && payerBalance >= tx.Amount {
-			selfId := strconv.Itoa(int(Port))
-			selfBalance := getBalance(parentBlock, payee)
+			curPayer := strconv.Itoa(int(txData.Msg.PayerId))
+			curPayerBalance, _ := getBalanceAndPk(mpt, curPayer)
 
-			//(3) Create an MPT.
-			mpt := parentBlock.Value
-			newPayerBalance := strconv.Itoa(int(payerBalance - tx.Amount))
-			newPayeeBalance := strconv.Itoa(int(payeeBalance + tx.Amount))
-			newSelfBalance := strconv.Itoa(int(selfBalance + tx.TxFee))
-			mpt.Insert(payer, newPayerBalance)
-			mpt.Insert(payee, newPayeeBalance)
-			mpt.Insert(selfId, newSelfBalance)
+			curPayee := strconv.Itoa(int(txData.Msg.PayeeId))
+			curPayeeBalance, _ := getBalanceAndPk(mpt, curPayee)
+			//verify!!!
+			//check payee exist && payer has enough balance
+			//curPayer != curPayee &&
+			if curPayer != curPayee && curPayeeBalance >= 0 && curPayerBalance >= txData.Msg.Amount {
 
-			nonce = ""
-			//(4) Randomly generate the first nonce
-			for i := 0; i < 16; i++ {
-				rand := strconv.FormatInt(int64(rand.Intn(16)), 16)
-				nonce += rand
-			}
-			parentHash := parentBlock.Header.Hash
-			mptRoot := mpt.GetRoot()
+				//(3) Create an MPT.
+				//Deduct balance from current TX payer
+				mpt = updateBalance(txData.Msg.PayerId, -(txData.Msg.Amount + txData.Msg.TxFee), mpt)
 
-			for {
-				//(7) If someone else found a nonce first,
-				// and you received the new block through your function ReceiveHeartBeat(),
-				// stop trying nonce on the current block,
-				// continue to the while loop by jumping to the step(2).
-				if parentBlock.Header.Height < SBC.GetLatestBlocks()[0].Header.Height {
-					break
-				} else {
-					nonceHash := GetNonceHash(parentHash, nonce, mptRoot)
-					if strings.HasPrefix(nonceHash, PREFIX) {
-						//(6) If a nonce is found and the next block is generated,
-						// forward that block to all peers with an HeartBeatData;
-						block := SBC.GenBlock(mpt, nonce, tx)
-						blockJson, err := block.EncodeToJson()
-						if err != nil {
-							log.Println("StartTryingNonces: EncodeToJson", err)
+				curHeight := SBC.GetLength()              //10, next 11
+				blockList, bool := SBC.Get(curHeight - 5) //5
+				if bool == true {
+					var prevBlock p2.Block
+					//go back to the sixth block in front of current block
+					for i := 0; i < 5; i++ {
+						prevBlock, _ = SBC.GetParentBlock(parentBlock)
+					}
+					prevTX := prevBlock.Header.Transaction
+					//check fork
+					//has fork
+					if len(blockList) > 1 {
+						for j := range blockList {
+							if prevBlock.Header.Hash != blockList[j].Header.Hash {
+								forkTX := blockList[j].Header.Transaction
+								//Add: back
+								mpt = updateBalance(forkTX.Msg.PayerId, forkTX.Msg.Total, mpt)
+								//Transactions.Add(tx)
+							}
 						}
-						peerMapJSON, err := Peers.PeerMapToJson()
-						if err != nil {
-							log.Println("StartTryingNonces: PeerMapToJson", err)
-						}
-						heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, blockJson)
-						fmt.Println("Generate block:")
+					}
+					//Add: miner get tx fee and payee get money
+					mpt = updateBalance(prevTX.Msg.PayeeId, prevTX.Msg.Amount, mpt)
+					mpt = updateBalance(prevTX.MinerId, prevTX.Msg.TxFee, mpt)
+				}
 
-						//forward heartbeat
-						ForwardHeartBeat(heartBeatData)
-						//remove tx from pool
-						Transactions.Delete(tx)
+				nonce = ""
+				//(4) Randomly generate the first nonce
+				for i := 0; i < 16; i++ {
+					rand := strconv.FormatInt(int64(rand.Intn(16)), 16)
+					nonce += rand
+				}
+				parentHash := parentBlock.Header.Hash
+				mptRoot := mpt.GetRoot()
+
+				for {
+					//(7) If someone else found a nonce first,
+					// and you received the new block through your function ReceiveHeartBeat(),
+					// stop trying nonce on the current block,
+					// continue to the while loop by jumping to the step(2).
+					if parentBlock.Header.Height < SBC.GetLatestBlocks()[0].Header.Height {
 						break
 					} else {
-						data, err := strconv.ParseUint(nonce, 16, 64)
-						if err != nil {
-							fmt.Println(err)
-						}
-						nonce = strconv.FormatInt(int64(data+1), 16)
-						if len(nonce) > 16 {
-							nonce = "0000000000000000"
+						nonceHash := GetNonceHash(parentHash, nonce, mptRoot)
+						if strings.HasPrefix(nonceHash, PREFIX) {
+							//(6) If a nonce is found and the next block is generated,
+							// forward that block to all peers with an HeartBeatData;
+							txData.MinerId = Port
+							block := SBC.GenBlock(mpt, nonce, txData)
+							blockJson, err := block.EncodeToJson()
+							if err != nil {
+								log.Println("StartTryingNonces: EncodeToJson", err)
+							}
+							peerMapJSON, err := Peers.PeerMapToJson()
+							if err != nil {
+								log.Println("StartTryingNonces: PeerMapToJson", err)
+							}
+							heartBeatData := data.PrepareHeartBeatData(&SBC, Peers.GetSelfId(), peerMapJSON, selfAddr, blockJson)
+							fmt.Println("Generate block:")
+
+							//forward heartbeat
+							ForwardHeartBeat(heartBeatData)
+							//remove tx from pool
+							Transactions.Delete(tx.TransactionData)
+							break
+						} else {
+							data, err := strconv.ParseUint(nonce, 16, 64)
+							if err != nil {
+								fmt.Println(err)
+							}
+							nonce = strconv.FormatInt(int64(data+1), 16)
+							if len(nonce) > 16 {
+								nonce = "0000000000000000"
+							}
 						}
 					}
 				}
+			} else {
+				Transactions.Delete(tx.TransactionData)
 			}
-		} else {
-			Transactions.Delete(tx)
 		}
 	}
 }
+
+/**
+update balance in mpt, return back mpt
+ */
+func updateBalance(id int32, amount int32, mpt p1.MerklePatriciaTrie) p1.MerklePatriciaTrie {
+	user := strconv.Itoa(int(id))
+	oldBalance, pk := getBalanceAndPk(mpt, user)
+	newBalance := strconv.Itoa(int(oldBalance + amount))
+
+	infoMap := make(map[string]string)
+	infoMap["balance"] = newBalance
+	infoMap["publicKey"] = pk
+	buffer, err := json.Marshal(infoMap)
+	if err != nil {
+		fmt.Println(err)
+	}
+	mpt.Insert(user, string(buffer[:]))
+	return mpt
+}
+
 
 func stringToInt32(str string) int32 {
 	v, err := strconv.Atoi(str)
@@ -613,32 +675,42 @@ func stringToInt32(str string) int32 {
 	return int32(v)
 }
 
-func getBalance(block p2.Block, key string) int32 {
-	value, err := block.Value.Get(key)
+/**
+By using key to find the balance and public key
+ */
+func getBalanceAndPk(mpt p1.MerklePatriciaTrie, key string) (int32, string) {
+	value, err := mpt.Get(key)
 	if err != nil {
 		log.Println("getBalance: Get", err)
-		return -1
+		return -1, ""
 	}
-	var v int
-	v, err = strconv.Atoi(value)
+	infoMap := make(map[string]string)
+	err = json.Unmarshal([]byte(value), &infoMap)
 	if err != nil {
-		log.Println("getBalance: Atoi", err)
+		fmt.Println(err)
 	}
-	return int32(v)
+	var b int
+	b, err = strconv.Atoi(infoMap["balance"])
+	p := infoMap["publicKey"]
+	return int32(b), p
 }
 
-func validateTX(tx data.TransactionData, parentBlock p2.Block) bool{
-	payer := strconv.Itoa(int(tx.PayerId))
-	payee := strconv.Itoa(int(tx.PayeeId))
-	payerBalance := getBalance(parentBlock, payer)
-	payeeBalance := getBalance(parentBlock, payee)
+/**
+validate tx
+ */
+func validateTX(tx p5.TransactionData, parentBlock p2.Block) bool {
+	payer := strconv.Itoa(int(tx.Msg.PayerId))
+	payee := strconv.Itoa(int(tx.Msg.PayeeId))
+	payerBalance, _ := getBalanceAndPk(parentBlock.Value, payer)
+	payeeBalance, _ := getBalanceAndPk(parentBlock.Value, payee)
 	//valid
-	if payeeBalance >= 0 && payerBalance >= tx.Amount {
+	if payer != payee && payeeBalance >= 0 && payerBalance >= tx.Msg.Amount {
 		return true
 	} else {
 		return false
 	}
 }
+
 /**
 GetNonceHash: use SHA3(parentHash + nonce + mptRootHash) to get nonce hash
  */
@@ -649,23 +721,79 @@ func GetNonceHash(parentHash string, nonce string, mptRoot string) string {
 	return nonceHash
 }
 
-///**
+/**
 //send TX to node1, node1 will send TX to other peers
-// */
-func Transfer(w http.ResponseWriter, r *http.Request) {
-//	//get transaction
-//	body, err := ioutil.ReadAll(r.Body)
-//	if err != nil {
-//		log.Println("TransactionReceive: ReadAll", err)
-//		return
-//	}
-//	r.Body.Close()
-//	if err != nil {
-//		log.Println("TransactionReceive: Umarshal failed", err)
-//		w.WriteHeader(http.StatusBadRequest)
-//		return
-//	}
+*/
+/**
+Route{
+		"Transfer",
+		"POST",
+		"/transfer",
+		Transfer,
+	},
+json:
+{
+	"PayeeId": 6688,
+	"Amount": 20,
+	"TxFee": 5
 }
+ */
+func Transfer(w http.ResponseWriter, r *http.Request) {
+	//get transaction
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		log.Println("Transfer: ReadAll", err)
+		return
+	}
+	//body -> tx
+	//double check
+	txPost := p5.TransactionPost{}
+	err = json.Unmarshal([]byte(body), &txPost)
+	r.Body.Close()
+	if err != nil {
+		log.Println("Transfer: Umarshal failed", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	msg := p5.NewMsg(Port, txPost.PayeeId, txPost.Amount, txPost.TxFee, txPost.Amount+txPost.TxFee)
+
+	tx := addSignature(msg)
+	Transactions.Add(tx)
+	ForwardTransaction(tx)
+
+	fmt.Fprintf(w, "Create TX success.\n")
+
+}
+
+/**
+add signature for msg and return back tx
+ */
+func addSignature(msg p5.Msg) p5.Transaction {
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		fmt.Println(err)
+	}
+	//fmt.Println("original jsonMsg:", string(jsonMsg))
+	//use private key to sign
+	sig, _ := signature.RsaSign([]byte(jsonMsg))
+	//fmt.Println("test:", hex.EncodeToString(sig))
+	//fmt.Println("original signature:    ", hex.EncodeToString(sig))
+	//verify signature
+	//fmt.Println(signature.RsaSignVer([]byte(jsonMsg), sig))
+
+	txData := p5.TransactionData{msg, -1, hex.EncodeToString(sig)}
+	tx := p5.NewTransaction(Port, txData, 3)
+	//var jsonTX []byte
+	//jsonTX, err = json.Marshal(tx)
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
+	//fmt.Println("jsonText:", hex.EncodeToString(jsonTX))
+	return tx
+
+}
+
+
 
 /**
 Route{
@@ -685,27 +813,55 @@ func TransactionReceive(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 
 	//heartBeatJson := string(body)
-	tx := data.TransactionData{}
+	tx := p5.Transaction{}
 	err = json.Unmarshal([]byte(body), &tx)
 	if err != nil {
 		log.Println("TransactionReceive: Umarshal failed", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	//add TX to pool
-	Transactions.Add(tx)
-
-	//Hops check
-	//forward TX to peers
-	ForwardTransaction(tx)
-
+	if tx.Id != Port {
+		//add TX to pool
+		Transactions.Add(tx)
+		//hops-1
+		tx.Hops -= 1 //initial hops = 3
+		//Hops check
+		if tx.Hops > 0 {
+			ForwardTransaction(tx)
+		}
+	}
 }
 
 /**
-
+verify signature of tx
  */
-func ForwardTransaction(tx data.TransactionData) {
+func verifySignature(jsonTX string) bool {
+	//send json to others
+	t := p5.Transaction{}
+	err := json.Unmarshal([]byte(jsonTX), &t)
+	if err != nil {
+		fmt.Println(err)
+	}
+	//fmt.Println("t:", t)
+	//fmt.Println(hex.EncodeToString(sig))
+	//get signature
+	sign, _ := hex.DecodeString(t.TransactionData.Signature)
+	msg1, _ := t.TransactionData.Msg.EncodeToJson()
+	//fmt.Println("after    signature:    ", sign)
+	//fmt.Println("after    jsonMsg:", msg1)
+	//verify signature
+	//fmt.Println(signature.RsaSignVer([]byte(msg1), sign))
+	if signature.RsaSignVer([]byte(msg1), sign) == nil {
+		return true
+	} else {
+		return false
+	}
+}
+
+/**
+forward transaction to other miner
+ */
+func ForwardTransaction(tx p5.Transaction) {
 	Peers.Rebalance()
 	//send tx to peers
 	peerMap := Peers.Copy()
@@ -752,56 +908,87 @@ func Canonical(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, str)
 }
-
+/**
+get balance on current user account
+Route{
+		"MyBalance",
+		"GET",
+		"/mybalance",
+		MyBalance,
+	},
+ */
 func MyBalance(w http.ResponseWriter, r *http.Request) {
-	//???Assume 0th is the canonical
+	//Assume 0th is the canonical
 	block := SBC.GetLatestBlocks()[0]
-	mpt := block.Value
-	balance, err := mpt.Get(strconv.Itoa(int(Port)))
-	if err != nil {
-		log.Println("MyBalance: mpt.Get", err)
-	}
-	str := "SelfId:" + strconv.Itoa(int(Port)) + ", Balance:" + balance
+	//blockJson, _ := block.EncodeToJson()
+	//fmt.Println("block:", blockJson)
+	var mpt p1.MerklePatriciaTrie
+	mpt = block.Value
+	fmt.Println("mpt:", mpt)
+	balance, pk := getBalanceAndPk(mpt, strconv.Itoa(int(Port)))
+	str := "SelfId:" + strconv.Itoa(int(Port)) + "\n"
+	str += "Balance:" + strconv.Itoa(int(balance)) + "\n"
+	str += "PublicKey:\n" + pk + "\n"
 	fmt.Fprintf(w, str)
 }
 
+/**
+get all my txs
+Route{
+		"MyTXs",
+		"GET",
+		"/mytxs",
+		MyTXs,
+	},
+ */
 func MyTXs(w http.ResponseWriter, r *http.Request) {
 	str := ""
 	blockList := SBC.GetLatestBlocks()
 	for i, block := range blockList {
 		str += "\n" + "CHAIN #" + strconv.Itoa(i+1) + "\n"
+		str += getTX(block)
 		parentBlock, parentBlockExist := SBC.GetParentBlock(block)
-		if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
-			str += "" + "\n"
-		}
 		for parentBlockExist { //find next parentBlock
-			if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
-				str += "" + "\n"
-			}
+			str += getTX(parentBlock)
 			parentBlock, parentBlockExist = SBC.GetParentBlock(parentBlock)
 		}
 	}
 	fmt.Fprintf(w, str)
 }
 
-//func ServedTXs(w http.ResponseWriter, r *http.Request) {
-//	str := ""
-//	blockList := SBC.GetLatestBlocks()
-//	for i, block := range blockList {
-//		str += "\n" + "CHAIN #" + strconv.Itoa(i+1) + "\n"
-//		parentBlock, parentBlockExist := SBC.GetParentBlock(block)
-//		if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
-//			str += "" + "\n"
-//		}
-//		for parentBlockExist { //find next parentBlock
-//			if parentBlock.Header.Transaction.PayerId == Port || parentBlock.Header.Transaction.PayeeId == Port {
-//				str += "" + "\n"
-//			}
-//			parentBlock, parentBlockExist = SBC.GetParentBlock(parentBlock)
-//		}
-//	}
-//	fmt.Fprintf(w, str)
-//}
+/**
+get tx from a block
+ */
+func getTX(block p2.Block) string {
+
+	if block.Header.Transaction.Msg.PayerId == Port || block.Header.Transaction.Msg.PayeeId == Port {
+		txDetials, _ := block.Header.Transaction.EncodeToJson()
+		return txDetials + "\n"
+	} else {
+		return ""
+	}
+}
+
+/**
+This function prints all TXs
+Route{
+		"AllTXs",
+		"GET",
+		"/txs",
+		AllTXs,
+	},
+ */
+func AllTXs(w http.ResponseWriter, r *http.Request) {
+	str := "txs:\n"
+	for i := range Transactions.TxList {
+		tx, err := Transactions.TxList[i].EncodeToJson()
+		if err != nil {
+			fmt.Println(err)
+		}
+		str += tx + "\n"
+	}
+	fmt.Fprintf(w, str)
+}
 
 /**
 getBlockFormat: create block format

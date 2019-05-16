@@ -166,7 +166,7 @@ func (bc *BlockChain) GetLatestBlocks() []Block {
 GetParentBlock(): This function takes a block as the parameter, and returns its parent block.
  */
 func (bc *BlockChain) GetParentBlock(b Block) (Block, bool){
-	fmt.Println("bc2:", bc.Get(2))
+	//fmt.Println("bc2:", bc.Get(2))
 	parentHash := b.Header.ParentHash
 	parentHeight := b.Header.Height-1
 	if parentHeight >= 1 {

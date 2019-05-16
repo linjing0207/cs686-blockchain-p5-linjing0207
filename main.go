@@ -29,8 +29,8 @@ func main() {
 
 
 	} else {
-		p3.Port = 6686
-		log.Fatal(http.ListenAndServe(":6686", router))
+		p3.Port = 6688
+		log.Fatal(http.ListenAndServe(":6688", router))
 	}
 	//data.TestPeerListRebalance()
 
@@ -51,7 +51,7 @@ func TestNonce()  {
 	fmt.Println("begin:" + nonceHash + "\n")
 	for {
 		if strings.HasPrefix(nonceHash, "00000") {
-			fmt.Println("find\n")
+			fmt.Println("find")
 			break
 		} else {
 			data, err := strconv.ParseInt(nonce, 16, 64)
@@ -68,3 +68,4 @@ func TestNonce()  {
 		}
 	}
 }
+

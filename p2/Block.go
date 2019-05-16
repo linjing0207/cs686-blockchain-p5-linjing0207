@@ -2,7 +2,7 @@ package p2
 
 import (
 	"../p1"
-	"../p3/data"
+	"../p5"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -32,34 +32,34 @@ type Block struct {
 Header：
 */
 type Header struct {
-	Height      int32                `json:"height"`
-	Timestamp   int64                `json:"timestamp"`
-	Hash        string               `json:"hash"`
-	ParentHash  string               `json:"parenthash"`
-	Size        int32                `json:"size"`
-	Nonce       string               `json:"nonce"`
-	Transaction data.TransactionData `json:"transaction"`
+	Height      int32              `json:"height"`
+	Timestamp   int64              `json:"timeStamp"`
+	Hash        string             `json:"hash"`
+	ParentHash  string             `json:"parentHash"`
+	Size        int32              `json:"size"`
+	Nonce       string             `json:"nonce"`
+	Transaction p5.TransactionData `json:"transaction"`
 }
 
 /**
 BlockJson is a struct for storing json format of the block
  */
 type BlockJson struct {
-	Height      int32                `json:"height"`
-	Timestamp   int64                `json:"timeStamp"`
-	Hash        string               `json:"hash"`
-	ParentHash  string               `json:"parentHash"`
-	Size        int32                `json:"size"`
-	MPT         map[string]string    `json:"mpt"`
-	Nonce       string               `json:"nonce"`
-	Transaction data.TransactionData `json:"transaction"`
+	Height      int32              `json:"height"`
+	Timestamp   int64              `json:"timeStamp"`
+	Hash        string             `json:"hash"`
+	ParentHash  string             `json:"parentHash"`
+	Size        int32              `json:"size"`
+	MPT         map[string]string  `json:"mpt"`
+	Nonce       string             `json:"nonce"`
+	Transaction p5.TransactionData `json:"transaction"`
 }
 
 /**
 Create a new block
 Return type: Block
 */
-func NewBlock(height int32, timeStamp int64, parentHash string, value p1.MerklePatriciaTrie, nonce string, tx data.TransactionData) Block {
+func NewBlock(height int32, timeStamp int64, parentHash string, value p1.MerklePatriciaTrie, nonce string, tx p5.TransactionData) Block {
 	//create a block structure, value is null
 	block := Block{}
 	block.Initial(height, timeStamp, parentHash, value, nonce, tx)
@@ -72,7 +72,7 @@ This is a method of the block struct.
 Block: Block{Header{Height, Timestamp, Hash, ParentHash, Size}, value}
 Argument: height, timeStamp, hash, parentHash, value(mpt type)
  */
-func (b *Block) Initial(height int32, timeStamp int64, parentHash string, value p1.MerklePatriciaTrie, nonce string, tx data.TransactionData) {
+func (b *Block) Initial(height int32, timeStamp int64, parentHash string, value p1.MerklePatriciaTrie, nonce string, tx p5.TransactionData) {
 	//The size is the length of the byte array of the block value
 	size := len(value.MptToByteArray())
 	b.Header = Header{height, timeStamp, "", parentHash, int32(size), nonce, tx}
@@ -147,6 +147,7 @@ Example：
     }
 }
 */
+
 func (b *Block) EncodeToJson() (string, error) {
 	var jsonBlock string
 	blockJson := b.blockToBlockJson()
