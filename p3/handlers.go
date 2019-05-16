@@ -534,7 +534,7 @@ func StartTryingNonces() {
 	var nonce string
 	//(1) Start a while loop.
 	for {
-		//fmt.Println("hello???:", Transactions.TxList)
+
 		if len(Transactions.TxList) >= 1 {
 
 			//(2) Get the latest block or one of the latest blocks to use as a parent block.
