@@ -104,7 +104,7 @@ Description: Show all the transactions in current user's mempool.<br>
 Logic: Traverse transactionList, print out all uncomfirmed transactions.<br>
 
 ### 3.	Functionalities implementation
->(1) Data storage and initial deposit.
+>(1) Data storage and Register.
 See data structure details. We assume that each user will have 100 ETH deposits when registering. What is more, user will get a pair of private key and public key. The first node will create a mpt to store its’ information (key is id, value is a map including balance and public key). Other node will update the previous mpt (insert its’ information). Then generating a new block without TX, and forwarding heartbeat to peers.
 
 >(2) User could transfer ether coins to other users, send TX to miners.
@@ -114,13 +114,13 @@ This function implemented by API “/transfer”, with request body {"PayeeId": 
 User will get a private key after register. When user trying to post a transaction, he have to sign this transaction before sending to miners. 
 
 >(4) Miners add TX to mempool and forward TX to peers.
-API “/transaction/receive”: when miner received a TX, he will add this transaction to his own menpool (unconfirmed transaction list) and forward TX to peers. 
+API “/transaction/receive”: when miner received a TX, he will add this transaction to his own mempool (unconfirmed transaction list) and forward TX to peers. 
 
 >(5) Miner will priority serves the transactions with high TX fee, validate TX.
-Miner will try nonce constantly. They will sort all TXs by TX fee from the mempool and serve the TX with highest TX fee due to miners want to maximize their income. After that, miner have to validate the TX details. Check validation. 1.User could not transfer from to himself. 2.If there is enough balance for payer to transfer. 3.Check if the payee exists based on the latest block. What is more, miner are supposed to verify the signature of TX. Equally important that miner should verify the signature before generating a new block.
+Miner will try nonce constantly. They will sort all TXs by TX fee from the mempool and serve the TX with highest TX fee due to miners want to maximize their income. After that, miner have to validate the TX details. Check validation. 1.User could not transfer money to himself. 2.If there is enough balance for payer to transfer. 3.Check if the payee exists based on the latest block. 4.Miner is supposed to verify the signature of TX before generating a new block.
 
 >(6) When miner generate a new block, miner will process transaction and forward heartbeat to peers.
-Once miner finds the nonce, miner will generate the block for the valid transaction, and deduct money from payer. Then, miner send heartbeat with the new block to his peers.
+Once miner finds the nonce, miner will generate the block for the valid transaction, and deduct money from payer. Remove the corresponding TX from their mempool. Then, miner send heartbeat with the new block to his peers.
 
 >(7) When receiving a new block, verify nonce and validate the TX.
 When receiving a heartbeat with new block, user have to find all missing predecessor block from peers. Verify the nonce and validate the TX for each block before insertion. After insertion, they must remove the corresponding TX from their mempool.
@@ -130,7 +130,6 @@ When 5 valid blocks have been generated after one block, that means this block h
 
 >(9) Money will be refunded when transaction fails (when block becomes a fork).
 When a block has been confirmed, remaining blocks with same height became forks. At the same time, miner who are generating the new block (the sixth block after this one) will refund the money to previous payer, and put this transaction back to mempool again.
-
 
 ## Reference:
 
