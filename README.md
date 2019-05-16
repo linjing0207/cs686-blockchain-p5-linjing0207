@@ -1,5 +1,7 @@
 # Final Report - Electronic Funds Transfer System
 
+Demo video link: https://www.youtube.com/watch?v=NVGoFE3GBQ0&feature=youtu.be
+
 ## Introduction:
 > [A cryptocurrency (or crypto currency) is a digital asset designed to work as a medium of exchange that uses strong cryptography to secure financial transactions, control the creation of additional units, and verify the transfer of assets.](https://en.wikipedia.org/wiki/Cryptocurrency)
 This project implements a cryptocurrency system based on the project4 structure. In this project design, we assume that all the users could be miners. That means all the nodes could transfer money to others and also could generate blocks.
